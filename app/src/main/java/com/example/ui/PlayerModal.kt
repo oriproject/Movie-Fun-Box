@@ -135,17 +135,11 @@ fun PlayerModal(
                         contentAlignment = Alignment.Center
                     ) {
                         when {
-                            // 1. YouTube Trailer
-                            showTrailer && !movie.trailerYoutubeKey.isNullOrBlank() -> {
-                                EmbeddedWebView(
-                                    url = "https://www.youtube.com/embed/${movie.trailerYoutubeKey}?autoplay=1"
-                                )
-                            }
-                            // 2. Active Streaming Embed
+                            // 1. Active Streaming Embed
                             activeStreamUrl != null -> {
                                 EmbeddedWebView(url = activeStreamUrl!!)
                             }
-                            // 3. Movie Poster / Click to Play
+                            // 2. Movie Poster / Click to Play
                             else -> {
                                 Box(
                                     modifier = Modifier
@@ -307,37 +301,6 @@ fun PlayerModal(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
                                 )
-                            }
-                        }
-
-                        // Trailer Button
-                        if (!movie.trailerYoutubeKey.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = { viewModel.playTrailer() },
-                                colors = ButtonDefaults.buttonColors(containerColor = DarkCard),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp)
-                                    .testTag("btn_play_trailer")
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.PlayArrow,
-                                        contentDescription = null,
-                                        tint = AccentRed,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Watch Official Trailer",
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp
-                                    )
-                                }
                             }
                         }
 
@@ -558,6 +521,13 @@ fun PlayerModal(
 @Composable
 fun EmbeddedWebView(url: String, modifier: Modifier = Modifier) {
     var isPageLoading by remember(url) { mutableStateOf(true) }
+    val initialHost = remember(url) {
+        try {
+            Uri.parse(url).host?.lowercase().orEmpty()
+        } catch (e: Exception) {
+            ""
+        }
+    }
 
     Box(
         modifier = modifier
@@ -590,15 +560,35 @@ fun EmbeddedWebView(url: String, modifier: Modifier = Modifier) {
                         userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
                     }
 
+                    val injectAntiAdJs = { view: WebView? ->
+                        val script = """
+                            (function() {
+                                window.open = function() { return null; };
+                                window.alert = function() {};
+                                window.confirm = function() {};
+                                window.prompt = function() {};
+                                try {
+                                    Object.defineProperty(window, 'open', {
+                                        value: function() { return null; },
+                                        writable: false
+                                    });
+                                } catch(e) {}
+                            })();
+                        """.trimIndent()
+                        view?.evaluateJavascript(script, null)
+                    }
+
                     webViewClient = object : WebViewClient() {
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                            super.onPageStarted(view, url, favicon)
+                        override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: android.graphics.Bitmap?) {
+                            super.onPageStarted(view, pageUrl, favicon)
                             view?.setBackgroundColor(android.graphics.Color.BLACK)
+                            injectAntiAdJs(view)
                         }
 
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            super.onPageFinished(view, url)
+                        override fun onPageFinished(view: WebView?, pageUrl: String?) {
+                            super.onPageFinished(view, pageUrl)
                             view?.setBackgroundColor(android.graphics.Color.BLACK)
+                            injectAntiAdJs(view)
                             isPageLoading = false
                         }
 
@@ -610,16 +600,54 @@ fun EmbeddedWebView(url: String, modifier: Modifier = Modifier) {
                             handler?.proceed()
                         }
 
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?
+                        ): android.webkit.WebResourceResponse? {
+                            val reqUrl = request?.url?.toString()?.lowercase() ?: return null
+                            val blockedKeywords = listOf(
+                                "popads", "popunder", "smartlink", "histats", "propeller",
+                                "clickadu", "monetag", "adsterra", "hilltopads", "exoclick",
+                                "doubleclick", "googlesyndication", "adservice", "adsystem",
+                                "trafficjunky", "syndication", "bet365", "1xbet", "parimatch",
+                                "onclick", "banner", "tracking", "adnxs", "ad-delivery",
+                                "adrun", "adskeeper", "yandex.ru", "adcolony", "inmobi", "taboola", "outbrain"
+                            )
+                            if (blockedKeywords.any { reqUrl.contains(it) }) {
+                                return android.webkit.WebResourceResponse(
+                                    "text/plain",
+                                    "UTF-8",
+                                    java.io.ByteArrayInputStream(ByteArray(0))
+                                )
+                            }
+                            return super.shouldInterceptRequest(view, request)
+                        }
+
                         override fun shouldOverrideUrlLoading(
                             view: WebView?,
                             request: android.webkit.WebResourceRequest?
                         ): Boolean {
-                            val targetUrl = request?.url?.toString() ?: return false
-                            // Load streaming embeds and http/https links directly inside WebView
-                            if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+                            val reqUri = request?.url ?: return true
+                            val reqHost = reqUri.host?.lowercase().orEmpty()
+                            val scheme = reqUri.scheme?.lowercase().orEmpty()
+
+                            // Block intent://, market://, etc.
+                            if (scheme != "http" && scheme != "https") {
+                                return true
+                            }
+
+                            // Strictly allow only the authorized stream provider domain
+                            if (reqHost.isNotEmpty() && (
+                                reqHost == initialHost ||
+                                reqHost.endsWith(".$initialHost") ||
+                                reqHost.contains("vidsrc") ||
+                                reqHost.contains("2embed") ||
+                                reqHost.contains("multiembed")
+                            )) {
                                 return false
                             }
-                            // Block any external app/intent redirect triggers that pop up and close
+
+                            // BLOCK ALL external ad sites, YouTube, smartlinks, and redirect hijackers
                             return true
                         }
                     }
