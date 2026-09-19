@@ -1,0 +1,6 @@
+{
+  "name": "Moviefun Box",
+  "description": "Stream and discover trending movies, web series, and anime with Moviefun Box.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
