@@ -1,13 +1,19 @@
 package com.example.ui
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -55,11 +61,14 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -99,46 +108,125 @@ fun PlayerModal(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     val activeStreamUrl by viewModel.activeStreamUrl.collectAsState()
     val showTrailer by viewModel.showTrailerPlayer.collectAsState()
     val selectedSeason by viewModel.selectedSeason.collectAsState()
     val selectedEpisode by viewModel.selectedEpisode.collectAsState()
     val episodes by viewModel.episodes.collectAsState()
 
+    var customFullscreenView by remember { mutableStateOf<View?>(null) }
+    var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var seasonDropdownExpanded by remember { mutableStateOf(false) }
     var episodeDropdownExpanded by remember { mutableStateOf(false) }
 
+    val exitFullscreen = {
+        try {
+            customViewCallback?.onCustomViewHidden()
+        } catch (e: Exception) {}
+        customFullscreenView = null
+        customViewCallback = null
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        activity?.window?.let { win ->
+            WindowInsetsControllerCompat(win, win.decorView).show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            exitFullscreen()
+        }
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (customFullscreenView != null) {
+                exitFullscreen()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
             dismissOnClickOutside = false
         )
     ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = DarkBackground
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Column(
+        if (customFullscreenView != null) {
+            BackHandler {
+                exitFullscreen()
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = {
+                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
+                        customFullscreenView!!
+                    }
+                )
+
+                // Compact exit fullscreen button in corner
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .clickable { exitFullscreen() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Video Player / Preview Area
-                    Box(
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Exit Fullscreen",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        } else {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = DarkBackground
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                            .background(Color.Black),
-                        contentAlignment = Alignment.Center
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        when {
-                            // 1. Active Streaming Embed
-                            activeStreamUrl != null -> {
-                                EmbeddedWebView(url = activeStreamUrl!!)
-                            }
+                        // Video Player / Preview Area
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .background(Color.Black),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            when {
+                                // 1. Active Streaming Embed
+                                activeStreamUrl != null -> {
+                                    EmbeddedWebView(
+                                        url = activeStreamUrl!!,
+                                        onEnterFullscreen = { view, callback ->
+                                            customFullscreenView = view
+                                            customViewCallback = callback
+                                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                            activity?.window?.let { win ->
+                                                val insetsController = WindowInsetsControllerCompat(win, win.decorView)
+                                                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                                                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                                            }
+                                        },
+                                        onExitFullscreen = {
+                                            exitFullscreen()
+                                        }
+                                    )
+                                }
                             // 2. Movie Poster / Click to Play
                             else -> {
                                 Box(
@@ -495,31 +583,39 @@ fun PlayerModal(
                     }
                 }
 
-                // Top Floating Close Button
-                IconButton(
-                    onClick = onDismiss,
+                // Top Floating Close Button (Made smaller and compact)
+                Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(12.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.7f))
-                        .testTag("close_player_modal")
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .clickable(onClick = onDismiss)
+                        .testTag("close_player_modal"),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
                         tint = Color.White,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
         }
     }
 }
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun EmbeddedWebView(url: String, modifier: Modifier = Modifier) {
+fun EmbeddedWebView(
+    url: String,
+    modifier: Modifier = Modifier,
+    onEnterFullscreen: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
+    onExitFullscreen: (() -> Unit)? = null
+) {
     var isPageLoading by remember(url) { mutableStateOf(true) }
     val initialHost = remember(url) {
         try {
@@ -653,6 +749,16 @@ fun EmbeddedWebView(url: String, modifier: Modifier = Modifier) {
                     }
 
                     webChromeClient = object : WebChromeClient() {
+                        override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                            if (view != null && callback != null) {
+                                onEnterFullscreen?.invoke(view, callback)
+                            }
+                        }
+
+                        override fun onHideCustomView() {
+                            onExitFullscreen?.invoke()
+                        }
+
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
                             super.onProgressChanged(view, newProgress)
                             if (newProgress >= 70) {
@@ -703,4 +809,13 @@ fun EmbeddedWebView(url: String, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+fun Context.findActivity(): Activity? {
+    var currentContext = this
+    while (currentContext is ContextWrapper) {
+        if (currentContext is Activity) return currentContext
+        currentContext = currentContext.baseContext
+    }
+    return null
 }

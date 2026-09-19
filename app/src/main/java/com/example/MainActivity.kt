@@ -56,7 +56,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Check 12-hour session validity and auto-unlock if 20s ad completed
         viewModel.handleAppResume()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.handleAppStop()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        viewModel.handleAppDestroy()
     }
 }

@@ -23,9 +23,11 @@ class MovieViewModel(application: Application) : AndroidViewModel(application) {
     val accessManager = AccessManager(application.applicationContext)
     private val repository = MovieRepository()
 
-    // 12-Hour Access state
+    // Per-Session Access state
     val isUnlocked: StateFlow<Boolean> = accessManager.isUnlocked
-    val remainingTimeMillis: StateFlow<Long> = accessManager.remainingTimeMillis
+
+    // Flag to track if user exited the app while unlocked
+    private var hasExitedWhileUnlocked: Boolean = false
 
     // Adsterra Smart Link Verification state
     private val _isAdVerificationActive = MutableStateFlow(false)
@@ -106,18 +108,7 @@ class MovieViewModel(application: Application) : AndroidViewModel(application) {
     private var serverTimerJob: Job? = null
 
     init {
-        startSessionMonitor()
         loadCategory(categories.first())
-    }
-
-    private fun startSessionMonitor() {
-        sessionMonitorJob?.cancel()
-        sessionMonitorJob = viewModelScope.launch {
-            while (true) {
-                accessManager.updateStatus()
-                delay(1000L)
-            }
-        }
     }
 
     fun startAdVerification() {
@@ -145,8 +136,27 @@ class MovieViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun handleAppStop() {
+        // If user was unlocked and leaves/exits the app, flag for re-verification upon return
+        if (accessManager.checkAccessValid()) {
+            hasExitedWhileUnlocked = true
+        }
+    }
+
+    fun handleAppDestroy() {
+        // Completely reset access when the app activity is destroyed
+        accessManager.lockSession()
+        hasExitedWhileUnlocked = false
+    }
+
     fun handleAppResume() {
-        accessManager.updateStatus()
+        // If user previously exited the app while unlocked, require watching ad again
+        if (hasExitedWhileUnlocked) {
+            hasExitedWhileUnlocked = false
+            accessManager.lockSession()
+            return
+        }
+
         if (accessManager.checkAccessValid()) return
 
         if (_hasAttemptedAdClick.value && adStartTimeMs > 0L) {
@@ -166,6 +176,7 @@ class MovieViewModel(application: Application) : AndroidViewModel(application) {
 
     fun completeAdUnlock() {
         adTimerJob?.cancel()
+        hasExitedWhileUnlocked = false
         accessManager.unlockSession()
         _isAdVerificationActive.value = false
         _hasAttemptedAdClick.value = false

@@ -148,7 +148,7 @@ fun AdUnlockScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Open 1 ADS per Day",
+                            text = "Watch ADS to Unlock",
                             color = Color(0xFFFFD500),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,

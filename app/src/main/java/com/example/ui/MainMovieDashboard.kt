@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material.icons.filled.Refresh
@@ -95,7 +96,6 @@ fun MainMovieDashboard(
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val remainingTimeMillis by viewModel.remainingTimeMillis.collectAsState()
     val selectedMovie by viewModel.selectedMovie.collectAsState()
     val isDetailLoading by viewModel.isDetailLoading.collectAsState()
 
@@ -109,7 +109,6 @@ fun MainMovieDashboard(
         Column(modifier = Modifier.fillMaxSize()) {
             // Top App Bar
             DashboardTopBar(
-                remainingTimeText = viewModel.accessManager.formatRemainingTime(remainingTimeMillis),
                 isSearchActive = isSearchVisible,
                 onSearchToggle = {
                     isSearchVisible = !isSearchVisible
@@ -338,7 +337,6 @@ fun MainMovieDashboard(
 
 @Composable
 private fun DashboardTopBar(
-    remainingTimeText: String,
     isSearchActive: Boolean,
     onSearchToggle: () -> Unit,
     onTelegramClick: () -> Unit
@@ -378,9 +376,9 @@ private fun DashboardTopBar(
                 )
             }
 
-            // Right side: 12-Hour Access Indicator + Search + Telegram
+            // Right side: Access Unlocked Indicator + Search + Telegram
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // 12-Hour session countdown pill
+                // Session Unlocked pill
                 Surface(
                     color = DarkSurfaceVariant,
                     shape = RoundedCornerShape(14.dp),
@@ -392,14 +390,14 @@ private fun DashboardTopBar(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Timer,
+                            imageVector = Icons.Default.CheckCircle,
                             contentDescription = null,
                             tint = NeonGreen,
                             modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = remainingTimeText,
+                            text = "Unlocked",
                             color = NeonGreen,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
