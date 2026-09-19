@@ -303,39 +303,42 @@ class MovieViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun selectEpisode(episodeNumber: Int) {
-        _selectedEpisode.value = episodeNumber
-        _activeStreamUrl.value = null
+    fun playMovie() {
+        val movie = _selectedMovie.value ?: return
+        serverTimerJob?.cancel()
         _showTrailerPlayer.value = false
         _isServerCountdownActive.value = false
+        _activeStreamUrl.value = buildStreamUrl(
+            movie.id,
+            movie.mediaType,
+            _selectedSeason.value,
+            _selectedEpisode.value
+        )
+    }
+
+    fun buildStreamUrl(id: Long, mediaType: String, season: Int, episode: Int): String {
+        return if (mediaType == "tv") {
+            "https://vidsrc.to/embed/tv/$id/$season/$episode"
+        } else {
+            "https://vidsrc.to/embed/movie/$id"
+        }
+    }
+
+    fun selectEpisode(episodeNumber: Int) {
+        _selectedEpisode.value = episodeNumber
+        _showTrailerPlayer.value = false
+        _isServerCountdownActive.value = false
+        val movie = _selectedMovie.value ?: return
+        _activeStreamUrl.value = buildStreamUrl(movie.id, movie.mediaType, _selectedSeason.value, episodeNumber)
     }
 
     fun selectServer(server: StreamServer) {
         _selectedServer.value = server
-        startStreamCountdown()
+        playMovie()
     }
 
     fun startStreamCountdown() {
-        val movie = _selectedMovie.value ?: return
-        _showTrailerPlayer.value = false
-        _isServerCountdownActive.value = true
-        _serverCountdown.value = 15
-
-        serverTimerJob?.cancel()
-        serverTimerJob = viewModelScope.launch {
-            for (i in 15 downTo 1) {
-                _serverCountdown.value = i
-                delay(1000L)
-            }
-            _isServerCountdownActive.value = false
-            val streamUrl = _selectedServer.value.urlBuilder(
-                movie.id,
-                movie.mediaType,
-                _selectedSeason.value,
-                _selectedEpisode.value
-            )
-            _activeStreamUrl.value = streamUrl
-        }
+        playMovie()
     }
 
     fun playTrailer() {

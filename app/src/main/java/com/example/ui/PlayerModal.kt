@@ -99,11 +99,8 @@ fun PlayerModal(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val isCountdownActive by viewModel.isServerCountdownActive.collectAsState()
-    val serverCountdown by viewModel.serverCountdown.collectAsState()
     val activeStreamUrl by viewModel.activeStreamUrl.collectAsState()
     val showTrailer by viewModel.showTrailerPlayer.collectAsState()
-    val selectedServer by viewModel.selectedServer.collectAsState()
     val selectedSeason by viewModel.selectedSeason.collectAsState()
     val selectedEpisode by viewModel.selectedEpisode.collectAsState()
     val episodes by viewModel.episodes.collectAsState()
@@ -148,54 +145,13 @@ fun PlayerModal(
                             activeStreamUrl != null -> {
                                 EmbeddedWebView(url = activeStreamUrl!!)
                             }
-                            // 3. Countdown Overlay
-                            isCountdownActive -> {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(DarkBackground.copy(alpha = 0.95f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(
-                                            imageVector = Icons.Default.Tv,
-                                            contentDescription = null,
-                                            tint = NeonGreen,
-                                            modifier = Modifier.size(44.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = "Connecting to Secure Server",
-                                            color = TextPrimary,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp
-                                        )
-                                        Text(
-                                            text = "Verifying stream connection... Please wait",
-                                            color = TextSecondary,
-                                            fontSize = 12.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Text(
-                                            text = "$serverCountdown",
-                                            color = NeonGreen,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 32.sp
-                                        )
-                                        Text(
-                                            text = "Do not close window",
-                                            color = TextSecondary,
-                                            fontSize = 10.sp
-                                        )
-                                    }
-                                }
-                            }
-                            // 4. Fake Player Poster / Click to Load
+                            // 3. Movie Poster / Click to Play
                             else -> {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clickable { viewModel.startStreamCountdown() },
+                                        .clickable { viewModel.playMovie() }
+                                        .testTag("player_poster_click_to_play"),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (movie.fullBackdropUrl.isNotEmpty()) {
@@ -221,8 +177,8 @@ fun PlayerModal(
                                             .background(
                                                 Brush.verticalGradient(
                                                     listOf(
-                                                        Color.Black.copy(alpha = 0.4f),
-                                                        Color.Black.copy(alpha = 0.7f)
+                                                        Color.Black.copy(alpha = 0.35f),
+                                                        Color.Black.copy(alpha = 0.75f)
                                                     )
                                                 )
                                             )
@@ -246,10 +202,10 @@ fun PlayerModal(
                                         }
                                         Spacer(modifier = Modifier.height(10.dp))
                                         Text(
-                                            text = "Click to Load Server",
+                                            text = if (movie.mediaType == "tv") "Click to Play Episode $selectedEpisode" else "Click to Play Movie",
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp
+                                            fontSize = 15.sp
                                         )
                                     }
                                 }
@@ -326,30 +282,60 @@ fun PlayerModal(
                             }
                         }
 
+                        // Main Direct Play Button
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = { viewModel.playMovie() },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("btn_play_movie_direct")
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (movie.mediaType == "tv") "Play Episode $selectedEpisode Now" else "Play Movie Now",
+                                    color = Color.Black,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+                        }
+
                         // Trailer Button
                         if (!movie.trailerYoutubeKey.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
                             Button(
                                 onClick = { viewModel.playTrailer() },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                                colors = ButtonDefaults.buttonColors(containerColor = DarkCard),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(44.dp)
+                                    .testTag("btn_play_trailer")
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         imageVector = Icons.Default.PlayArrow,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = AccentRed,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "Watch Official Trailer",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp
                                     )
                                 }
                             }
@@ -469,60 +455,7 @@ fun PlayerModal(
                             }
                         }
 
-                        // Streaming Server Selection Grid
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Text(
-                            text = "SELECT STREAMING SERVER",
-                            color = TextSecondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            viewModel.servers.forEach { server ->
-                                val isSelected = selectedServer.id == server.id
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelected) NeonGreen else DarkCard
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isSelected) NeonGreen else DarkBorder
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { viewModel.selectServer(server) }
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 12.dp, horizontal = 4.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(text = server.icon, fontSize = 20.sp)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = server.name,
-                                            color = if (isSelected) Color.Black else TextPrimary,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 11.sp,
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = "(${server.tag})",
-                                            color = if (isSelected) Color.Black.copy(alpha = 0.8f) else TextSecondary,
-                                            fontSize = 9.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
 
                         // Telegram Link Card
                         Spacer(modifier = Modifier.height(20.dp))
@@ -624,31 +557,122 @@ fun PlayerModal(
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun EmbeddedWebView(url: String, modifier: Modifier = Modifier) {
-    AndroidView(
-        modifier = modifier.fillMaxSize(),
-        factory = { ctx ->
-            WebView(ctx).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    mediaPlaybackRequiresUserGesture = false
-                    loadWithOverviewMode = true
-                    useWideViewPort = true
-                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+    var isPageLoading by remember(url) { mutableStateOf(true) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        databaseEnabled = true
+                        allowFileAccess = true
+                        allowContentAccess = true
+                        mediaPlaybackRequiresUserGesture = false
+                        loadWithOverviewMode = true
+                        useWideViewPort = true
+                        javaScriptCanOpenWindowsAutomatically = false
+                        setSupportMultipleWindows(false)
+                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+                    }
+
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                            super.onPageStarted(view, url, favicon)
+                            view?.setBackgroundColor(android.graphics.Color.BLACK)
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            view?.setBackgroundColor(android.graphics.Color.BLACK)
+                            isPageLoading = false
+                        }
+
+                        override fun onReceivedSslError(
+                            view: WebView?,
+                            handler: android.webkit.SslErrorHandler?,
+                            error: android.net.http.SslError?
+                        ) {
+                            handler?.proceed()
+                        }
+
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?
+                        ): Boolean {
+                            val targetUrl = request?.url?.toString() ?: return false
+                            // Load streaming embeds and http/https links directly inside WebView
+                            if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+                                return false
+                            }
+                            // Block any external app/intent redirect triggers that pop up and close
+                            return true
+                        }
+                    }
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                            super.onProgressChanged(view, newProgress)
+                            if (newProgress >= 70) {
+                                isPageLoading = false
+                            }
+                        }
+                    }
+
+                    loadUrl(url)
                 }
-                webViewClient = WebViewClient()
-                webChromeClient = WebChromeClient()
-                loadUrl(url)
+            },
+            update = { webView ->
+                if (webView.url != url) {
+                    isPageLoading = true
+                    webView.setBackgroundColor(android.graphics.Color.BLACK)
+                    webView.loadUrl(url)
+                }
             }
-        },
-        update = { webView ->
-            if (webView.url != url) {
-                webView.loadUrl(url)
+        )
+
+        // Sleek dark buffering overlay to completely eliminate any white screen flash
+        AnimatedVisibility(
+            visible = isPageLoading,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = NeonGreen,
+                        modifier = Modifier.size(36.dp),
+                        strokeWidth = 3.dp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Buffering Stream...",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
-    )
+    }
 }
