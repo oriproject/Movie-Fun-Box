@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
@@ -21,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,12 +35,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
@@ -62,32 +66,35 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
+import com.example.R
 import com.example.data.AccessManager
 import com.example.data.MovieDetail
 import com.example.data.StreamServer
+import kotlinx.coroutines.delay
 import com.example.ui.theme.AccentBlue
 import com.example.ui.theme.AccentRed
 import com.example.ui.theme.AccentYellow
@@ -132,35 +139,64 @@ fun PlayerModal(
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            exitFullscreen()
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isFullscreenMode = isLandscape || customFullscreenView != null
+
+    LaunchedEffect(isFullscreenMode) {
+        activity?.window?.let { win ->
+            val controller = WindowInsetsControllerCompat(win, win.decorView)
+            if (isFullscreenMode) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
-    Dialog(
-        onDismissRequest = {
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                customViewCallback?.onCustomViewHidden()
+            } catch (e: Exception) {}
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.window?.let { win ->
+                WindowInsetsControllerCompat(win, win.decorView).show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    if (isFullscreenMode) {
+        BackHandler {
             if (customFullscreenView != null) {
                 exitFullscreen()
             } else {
-                onDismiss()
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
-        },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = false
-        )
-    ) {
-        if (customFullscreenView != null) {
-            BackHandler {
-                exitFullscreen()
+        }
+
+        var showLandscapeControls by remember { mutableStateOf(true) }
+        LaunchedEffect(showLandscapeControls) {
+            if (showLandscapeControls) {
+                delay(4000L)
+                showLandscapeControls = false
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-            ) {
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    showLandscapeControls = !showLandscapeControls
+                }
+        ) {
+            if (customFullscreenView != null) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = {
@@ -168,65 +204,216 @@ fun PlayerModal(
                         customFullscreenView!!
                     }
                 )
-
-                // Compact exit fullscreen button in corner
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.65f))
-                        .clickable { exitFullscreen() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Exit Fullscreen",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-        } else {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = DarkBackground
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        // Video Player / Preview Area
+            } else {
+                when {
+                    activeStreamUrl != null -> {
+                        EmbeddedWebView(
+                            url = activeStreamUrl!!,
+                            modifier = Modifier.fillMaxSize(),
+                            onEnterFullscreen = { view, callback ->
+                                customFullscreenView = view
+                                customViewCallback = callback
+                            },
+                            onExitFullscreen = {
+                                exitFullscreen()
+                            }
+                        )
+                    }
+                    else -> {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                                .background(Color.Black),
+                                .fillMaxSize()
+                                .clickable { viewModel.playMovie() },
                             contentAlignment = Alignment.Center
                         ) {
-                            when {
-                                // 1. Active Streaming Embed
-                                activeStreamUrl != null -> {
-                                    EmbeddedWebView(
-                                        url = activeStreamUrl!!,
-                                        onEnterFullscreen = { view, callback ->
-                                            customFullscreenView = view
-                                            customViewCallback = callback
+                            if (movie.fullBackdropUrl.isNotEmpty()) {
+                                AsyncImage(
+                                    model = movie.fullBackdropUrl,
+                                    contentDescription = movie.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else if (movie.fullPosterUrl.isNotEmpty()) {
+                                AsyncImage(
+                                    model = movie.fullPosterUrl,
+                                    contentDescription = movie.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.55f))
+                            )
+                            Button(
+                                onClick = { viewModel.playMovie() },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonGreen)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Play Movie", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Floating Top Bar in Landscape
+            AnimatedVisibility(
+                visible = showLandscapeControls,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Black.copy(alpha = 0.85f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.65f))
+                                .clickable {
+                                    if (customFullscreenView != null) {
+                                        exitFullscreen()
+                                    } else {
+                                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = movie.title,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (movie.mediaType == "tv" && selectedSeason != null && selectedEpisode != null) {
+                                Text(
+                                    text = "Season $selectedSeason Episode $selectedEpisode",
+                                    color = NeonGreen,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    // Exit Fullscreen / Switch to Portrait
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .clickable {
+                                if (customFullscreenView != null) {
+                                    exitFullscreen()
+                                } else {
+                                    activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_fullscreen_exit),
+                            contentDescription = "Exit Fullscreen",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    } else {
+        BackHandler {
+            onDismiss()
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = DarkBackground
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    // Video Player / Preview Area
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .aspectRatio(16f / 9f)
+                            .background(Color.Black),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            // 1. Active Streaming Embed
+                            activeStreamUrl != null -> {
+                                EmbeddedWebView(
+                                    url = activeStreamUrl!!,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onEnterFullscreen = { view, callback ->
+                                        customFullscreenView = view
+                                        customViewCallback = callback
+                                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                    },
+                                    onExitFullscreen = {
+                                        exitFullscreen()
+                                    }
+                                )
+
+                                // Fullscreen button on player overlay
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(8.dp)
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.70f))
+                                        .clickable {
                                             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                            activity?.window?.let { win ->
-                                                val insetsController = WindowInsetsControllerCompat(win, win.decorView)
-                                                insetsController.hide(WindowInsetsCompat.Type.systemBars())
-                                                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                                            }
                                         },
-                                        onExitFullscreen = {
-                                            exitFullscreen()
-                                        }
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_fullscreen),
+                                        contentDescription = "Fullscreen",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
+                            }
                             // 2. Movie Poster / Click to Play
                             else -> {
                                 Box(
@@ -587,6 +774,7 @@ fun PlayerModal(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
+                        .statusBarsPadding()
                         .padding(12.dp)
                         .size(30.dp)
                         .clip(CircleShape)
@@ -605,7 +793,6 @@ fun PlayerModal(
             }
         }
     }
-}
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -668,6 +855,19 @@ fun EmbeddedWebView(
                                         value: function() { return null; },
                                         writable: false
                                     });
+                                } catch(e) {}
+                                try {
+                                    var style = document.getElementById('fit-player-style');
+                                    if (!style) {
+                                        style = document.createElement('style');
+                                        style.id = 'fit-player-style';
+                                        style.innerHTML = 'html, body { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; } iframe, video, #player, .player { width: 100% !important; height: 100% !important; border: 0 !important; }';
+                                        if (document.head) {
+                                            document.head.appendChild(style);
+                                        } else if (document.documentElement) {
+                                            document.documentElement.appendChild(style);
+                                        }
+                                    }
                                 } catch(e) {}
                             })();
                         """.trimIndent()
